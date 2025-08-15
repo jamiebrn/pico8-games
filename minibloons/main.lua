@@ -1,15 +1,23 @@
 function _init()
     poke(0x5f2d, 1)
 
+    monkey_types = {
+        dart_monkey = {range = 20, sprite = 2, cost = 30},
+        ninja_monkey = {range = 25, sprite = 34, cost = 40}
+    }
+
     darts = {}
     monkeys = {}
     bloons = {}
+
+    particles = {}
 
     -- path in grid tiles
     path = {{-1, 6}, {8, 6}, {8, 3}, {5, 3}, {5, 12}, {2, 12}, {2, 9}, {11, 9}, {11, 6}, {13, 6}, {13, 12}, {7, 12}, {7, 16}}
 
     placing_monkey = false
     money = 100
+    health = 50
 
     bloon_spawn_cooldown_max = 20
     bloon_spawn_cooldown = bloon_spawn_cooldown_max
@@ -25,7 +33,10 @@ function _update60()
     for i, bloon in ipairs(bloons) do
         if not bloon:update() then
             deli(bloons, i)
-            -- TODO: health remove
+            health -= 1
+            for j = 0, flr(rnd(6)) + 3 do
+                create_bloon_damage_particle()
+            end
         end
 
         -- test collisions with darts
@@ -33,13 +44,19 @@ function _update60()
             local sqdist = (dart.x - bloon.x) ^ 2 + (dart.y - bloon.y) ^ 2
             if sqdist <= 13 then
                 bloon:damage(1)
+                deli(darts, j)
                 if bloon.health <= 0 then
                     deli(bloons, i)
-                    deli(darts, j)
                     money += flr(rnd(bloon:get_reward())) + 1
                     break
                 end
             end
+        end
+    end
+
+    for i, part in ipairs(particles) do
+        if not part:update() do
+            deli(particles, i)
         end
     end
 
@@ -110,6 +127,10 @@ function _draw()
         object:draw()
     end
 
+    for part in all(particles) do
+        part:draw()
+    end
+
     -- money
     line(8, 2, 8, 11, 1)
     line(9, 3, 9, 10, 1)
@@ -117,8 +138,13 @@ function _draw()
     line(2, 3, 2, 10, 4)
     line(8, 3, 8, 10, 4)
     spr(16, 3, 3)
-    print(money, 12, 4, 1)
-    print(money, 11, 4, 7)
+    print(money, 13, 4, 1)
+    print(money, 12, 4, 7)
+
+    -- health
+    spr(17, 2, 14)
+    print(health, 13, 14, 1)
+    print(health, 12, 14, 7)
 
     spr(1, stat(32), stat(33)) -- cursor
 
@@ -199,7 +225,7 @@ function create_monkey(x, y)
         self.throw_cooldown -= 1
 
         local closest_bloon = self:_get_closest_bloon_pos()
-        if closest_bloon then
+        if closest_bloon and not self.throw_target then
             self.dir = atan2(closest_bloon.x - self.x, closest_bloon.y - self.y)
 
             if self.throw_cooldown <= 0 then
@@ -209,7 +235,9 @@ function create_monkey(x, y)
         end
 
         if self.throw_target then
+            self.dir = atan2(self.throw_target.x - self.x, self.throw_target.y - self.y)
             self.throw_progress += 10 / 60
+
             if self.throw_progress >= 1 then
                 local hand = self:_get_hand_local_pos()
                 local angle = atan2(self.throw_target.x - (self.x + hand.x), self.throw_target.y - (self.y + hand.y))
@@ -299,4 +327,48 @@ function create_bloon()
     end
 
     add(bloons, bloon)
+end
+
+function create_particle(x, y)
+    local part = {}
+    part.x = x
+    part.y = y
+    part.velx = 0
+    part.vely = 0
+    part.color = 0
+    part.size = 0
+    part.lifetime = 0
+    part.lifetime_max = 1
+
+    part.update = function(self)
+        self.x += self.velx / 60
+        self.y += self.vely / 60
+        self.lifetime -= 1
+        return self.lifetime > 0
+    end
+
+    part.draw = function(self)
+        local s = self.size * self.lifetime / self.lifetime_max
+        circfill(self.x, self.y, s, self.color)
+    end
+
+    part.init_lifetime = function(self, time)
+        self.lifetime = time
+        self.lifetime_max = time
+    end
+
+    return part
+end
+
+function create_bloon_damage_particle()
+    local final_grid = path[#path]
+    local part = create_particle(final_grid[1] * 8 + 4, final_grid[2] * 8 + 4)
+
+    part:init_lifetime(rnd(40) + 30)
+    part.velx = rnd(80) - 40
+    part.vely = rnd(80) - 40
+    part.size = rnd(3) + 1
+    part.color = flr(rnd(2)) + 8
+
+    add(particles, part)
 end
