@@ -1,3 +1,9 @@
+-- todo
+-- tower selection
+-- tower selling
+-- upgrades
+-- menu
+
 function _init()
     poke(0x5f2d, 1)
 
@@ -6,28 +12,81 @@ function _init()
         ninja_monkey = {range = 25, sprite = 34, cost = 40}
     }
 
+    buy_menu_choices = {
+        "dart_monkey", "ninja_monkey"
+    }
+    buy_menu_x_offset = 128
+    buy_menu_x_offset_dest = 128
+    buy_menu_width = 30
+    buy_menu_height = 60
+
     darts = {}
     monkeys = {}
     bloons = {}
 
     particles = {}
 
-    -- path in grid tiles
-    path = {{-1, 6}, {8, 6}, {8, 3}, {5, 3}, {5, 12}, {2, 12}, {2, 9}, {11, 9}, {11, 6}, {13, 6}, {13, 12}, {7, 12}, {7, 16}}
+    maps = {
+        monkey_meadow = {name = "monkey meadow",
+            offset = {0, 0}, path = {{-1, 6}, {8, 6}, {8, 3}, {5, 3}, {5, 12}, {2, 12}, {2, 9}, {11, 9}, {11, 6}, {13, 6}, {13, 12}, {7, 12}, {7, 16}},
+            rounds = {{{[1]=10}, 50}, {{[1]=10}, 40}, {{[1]=12}, 35}, {{[1]=10, [2]=3}, 40}, {{[1]=14, [2]=5}, 40}}
+        }
+    }
 
-    placing_monkey = false
+    placing_monkey = nil
     money = 100
     health = 50
+    round = 1
+    round_intermission = true
+    won = false
 
-    bloon_spawn_cooldown_max = 20
-    bloon_spawn_cooldown = bloon_spawn_cooldown_max
+    current_map = maps["monkey_meadow"]
+    current_round = nil
+    load_round()
+
+    left_mouse = false
+    left_mouse_last = false
+    right_mouse = false
+    right_mouse_last = false
+
+    bloon_spawn_cooldown = 0
+end
+
+function left_mouse_press()
+    return left_mouse and not left_mouse_last
+end
+
+function right_mouse_press()
+    return right_mouse and not right_mouse_last
 end
 
 function _update60()
-    bloon_spawn_cooldown -= 1
-    if bloon_spawn_cooldown <= 0 then
-        bloon_spawn_cooldown = bloon_spawn_cooldown_max
-        create_bloon()
+    left_mouse_last = left_mouse
+    left_mouse = stat(34) & 1 == 1
+    right_mouse_last = right_mouse
+    right_mouse = stat(34) & 2 == 2
+
+    bloon_spawn_cooldown = max(bloon_spawn_cooldown - 1, 0)
+    if not round_intermission and bloon_spawn_cooldown <= 0 and not tbl_empty(current_round[1]) then
+        bloon_spawn_cooldown = current_round[2]
+        -- choose bloon
+        local total = 0
+        for i, blooncount in pairs(current_round[1]) do
+            total += blooncount
+        end
+        local cumulative = 0
+        local chosen = flr(rnd(total)) + 1
+        for bloontype, blooncount in pairs(current_round[1]) do
+            cumulative += blooncount
+            if chosen <= cumulative then
+                create_bloon(bloontype)
+                current_round[1][bloontype] -= 1
+                if current_round[1][bloontype] <= 0 then
+                    current_round[1][bloontype] = nil
+                end
+                break
+            end
+        end
     end
 
     for i, bloon in ipairs(bloons) do
@@ -48,6 +107,20 @@ function _update60()
                 if bloon.health <= 0 then
                     deli(bloons, i)
                     money += flr(rnd(bloon:get_reward())) + 1
+
+                    -- test round end
+                    if #bloons == 0 and tbl_empty(current_round[1]) then
+                        round_intermission = true
+                        if #current_map["rounds"] > round then
+                            round += 1
+                            load_round()
+                            bloon_spawn_cooldown = 0
+                        else
+                            won = true
+                            buy_menu_x_offset_dest = 128
+                            placing_monkey = nil
+                        end
+                    end
                     break
                 end
             end
@@ -71,14 +144,25 @@ function _update60()
         monkey:update()
     end
 
-    if stat(34) & 2 == 2 and placing_monkey and not fget(mget(flr(stat(32) / 8), flr(stat(33) / 8)), 0) then
-        add(monkeys, create_monkey(stat(32), stat(33)))
-        money -= 30
-        placing_monkey = false
-    end
+    buy_menu_x_offset = lerp(buy_menu_x_offset, buy_menu_x_offset_dest, 0.1)
+    if not won then
+        if left_mouse_press() and rect_point_test(buy_menu_x_offset - 5, 0, buy_menu_x_offset, 8, stat(32), stat(33)) then
+            if buy_menu_x_offset_dest < 128 then
+                buy_menu_x_offset_dest = 128
+            else
+                buy_menu_x_offset_dest = 128 - buy_menu_width
+            end
+        end
 
-    if btnp(❎) and money >= 30 then
-        placing_monkey = true
+        if right_mouse_press() and placing_monkey then
+            placing_monkey = nil
+        end
+
+        if left_mouse_press() and placing_monkey and not fget(mget(flr(stat(32) / 8), flr(stat(33) / 8)), 0) then
+            add(monkeys, create_monkey(stat(32), stat(33), placing_monkey))
+            money -= placing_monkey.cost
+            placing_monkey = nil
+        end
     end
 end
 
@@ -105,9 +189,11 @@ function _draw()
             c2 = 2
         end
         fillp(▒)
-        circfill(stat(32), stat(33), 20, c2)
+        circfill(stat(32), stat(33), placing_monkey.range, c2)
         fillp()
-        circ(stat(32), stat(33), 20, c1)
+        circ(stat(32), stat(33), placing_monkey.range, c1)
+
+        spr(placing_monkey.sprite + 6, stat(32) - 4, stat(33) - 4)
     end
 
     for dart in all(darts) do
@@ -131,6 +217,28 @@ function _draw()
         part:draw()
     end
 
+    -- buy menu
+    local s = rect_point_test(buy_menu_x_offset - 5, 0, buy_menu_x_offset, 8, stat(32), stat(33)) and 33 or 32
+    spr(s, buy_menu_x_offset - 8, 0)
+    spr(48, buy_menu_x_offset - 6, 1, 1, 1, buy_menu_x_offset_dest < 128)
+    if buy_menu_x_offset < 128 then
+        rectfill(buy_menu_x_offset, 0, buy_menu_x_offset + buy_menu_width, buy_menu_height, 1)
+
+        for i, monkey_name in ipairs(buy_menu_choices) do
+            local monkey = monkey_types[monkey_name]
+
+            if rect_point_test(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 1, stat(32), stat(33)) then
+                rectfill(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 3, 13)
+                if left_mouse_press() and money >= monkey.cost then
+                    start_monkey_placement(monkey_name)
+                end
+            end
+
+            spr(monkey.sprite + 6, buy_menu_x_offset + 2, (i - 1) * 10)
+            print("$" .. monkey.cost, buy_menu_x_offset + 11, (i - 1) * 10 + 1, money >= monkey.cost and 7 or 8)
+        end
+    end
+
     -- money
     line(8, 2, 8, 11, 1)
     line(9, 3, 9, 10, 1)
@@ -146,9 +254,52 @@ function _draw()
     print(health, 13, 14, 1)
     print(health, 12, 14, 7)
 
+    -- round
+    print("round " .. round, 2, 24, 1)
+    print("round " .. round, 1, 24, 7)
+
+    if round_intermission and not won then
+        local hovering = rect_point_test(1, 31, 4, 39, stat(32), stat(33))
+        spr(hovering and 50 or 49, 1, 31)
+        if hovering and left_mouse_press() then
+            round_intermission = false
+        end
+    end
+
+    if won then
+        rectfill(22, 35, 106, 93, 1)
+        print("congratulations!", 33, 43 + sin(time()) * 3, 5)
+        print("congratulations!", 32, 43 + sin(time() + 0.2) * 3, 12)
+        print("you have completed", 29, 58, 5)
+        print("you have completed", 28, 58, 12)
+        print(current_map["name"], 64 - #current_map["name"] * 2 + 1, 68, 5)
+        print(current_map["name"], 64 - #current_map["name"] * 2, 68, 12)
+    end
+
     spr(1, stat(32), stat(33)) -- cursor
 
-    print("cpu " .. stat(1) .. "%", 0, 120, 7)
+    -- print("cpu " .. stat(1) .. "%", 0, 120, 7)
+
+    -- i = 0
+    -- for bloontype, blooncount in pairs(current_round[1]) do
+    --     print(bloontype .. ": " .. blooncount .. " left", 0, 80 + i * 9, 7)
+    --     i += 1
+    -- end
+end
+
+function tbl_empty(t)
+    for _ in pairs(t) do return false end
+    return true
+end
+
+function tbl_len(t)
+    local i = 0
+    for _ in pairs(t) do i += 1 end
+    return i
+end
+
+function rect_point_test(x1, y1, x2, y2, x, y)
+    return x1 <= x and y1 <= y and x2 >= x and y2 >= y
 end
 
 function rotate_vec(x, y, a)
@@ -156,6 +307,20 @@ function rotate_vec(x, y, a)
     vec.x = x * cos(a) - y * sin(a)
     vec.y = x * sin(a) + y * cos(a)
     return vec
+end
+
+function lerp(a, b, t)
+    if abs(b - a) < 0.5 then return b end
+    return (b - a) * t + a
+end
+
+function load_round()
+    local round_data = current_map["rounds"][round]
+    round_copy = {{}, round_data[2]}
+    for bloontype, blooncount in pairs(round_data[1]) do
+        round_copy[1][bloontype] = blooncount
+    end
+    current_round = round_copy
 end
 
 function create_dart(x, y, dir)
@@ -187,13 +352,20 @@ function ease_in_back(x)
     return (1.70158 + 1) * x * x * x - 1.70158 * x * x
 end
 
-function create_monkey(x, y)
+function start_monkey_placement(monkey_name)
+    if placing_monkey then return end
+    placing_monkey = monkey_types[monkey_name]
+    buy_menu_x_offset_dest = 128
+end
+
+function create_monkey(x, y, monkey_data)
     local throw_cooldown_max = 50
     
     local monkey = {}
     monkey.x = x
     monkey.y = y
     monkey.dir = 0
+    monkey.type_data = monkey_data
 
     monkey.throw_cooldown = 0
 
@@ -207,7 +379,7 @@ function create_monkey(x, y)
     end
 
     monkey._get_closest_bloon_pos = function(self)
-        local shortest = 401
+        local shortest = self.type_data.range ^ 2 + 1
         local pos = nil
         for bloon in all(bloons) do
             local sqdist = (bloon.x - self.x) ^ 2 + (bloon.y - self.y) ^ 2
@@ -253,7 +425,7 @@ function create_monkey(x, y)
     end
 
     monkey.draw = function(self)
-        local s =  min(flr((1 - self.dir) * 8 + 0.5) + 2, 9)
+        local s =  min(flr((1 - self.dir) * 8 + 0.5) + self.type_data.sprite, self.type_data.sprite + 7)
         spr(s, self.x - 4, self.y - 4)
 
         local hand = self:_get_hand_local_pos()
@@ -266,23 +438,23 @@ function create_monkey(x, y)
     return monkey
 end
 
-function create_bloon()
+function create_bloon(type)
     local speed = 20
-    local type_healths = {1, 3, 5, 10}
-    local type_reward = {1, 2, 4, 8}
+    local type_healths = {1, 2, 4, 7}
+    local type_reward = {2, 4, 6, 12}
 
     local bloon = {}
     bloon.path_index_dest = 1
 
     bloon._get_pos_from_path_index = function(self)
-        return {x = path[self.path_index_dest][1] * 8 + 4, y = path[self.path_index_dest][2] * 8}
+        return {x = current_map["path"][self.path_index_dest][1] * 8 + 4, y = current_map["path"][self.path_index_dest][2] * 8}
     end
 
     local pos = bloon:_get_pos_from_path_index()
     bloon.x = pos.x
     bloon.y = pos.y
 
-    bloon.type = flr(rnd(4)) + 1
+    bloon.type = type
     bloon.health = type_healths[bloon.type]
 
     bloon.flash_time = 0
@@ -298,7 +470,7 @@ function create_bloon()
         local dist = (dest_pos.x - self.x) ^ 2 + (dest_pos.y - self.y) ^ 2
         if dist <= 1 then
             self.path_index_dest += 1
-            if self.path_index_dest > #path then return false end
+            if self.path_index_dest > #current_map["path"] then return false end
             dest_pos = bloon:_get_pos_from_path_index()
             dist = (dest_pos.x - self.x) ^ 2 + (dest_pos.y - self.y) ^ 2
         end
@@ -361,6 +533,7 @@ function create_particle(x, y)
 end
 
 function create_bloon_damage_particle()
+    local path = current_map["path"]
     local final_grid = path[#path]
     local part = create_particle(final_grid[1] * 8 + 4, final_grid[2] * 8 + 4)
 
