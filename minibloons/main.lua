@@ -7,9 +7,11 @@
 function _init()
     poke(0x5f2d, 1)
 
+    game_state = 2 -- 0: main menu, 1: level select, 2: in game
+
     monkey_types = {
-        dart_monkey = {range = 20, sprite = 2, cost = 30},
-        ninja_monkey = {range = 25, sprite = 34, cost = 40}
+        dart_monkey = {name = {"dart", "monkey"}, range = 20, sprite = 2, cost = 30},
+        ninja_monkey = {name = {"ninja", "monkey"}, range = 25, sprite = 34, cost = 40}
     }
 
     buy_menu_choices = {
@@ -34,9 +36,12 @@ function _init()
     }
 
     placing_monkey = nil
+    selected_monkey = nil
+    selected_monkey_radius_anim = 0
+
     money = 100
     health = 50
-    round = 1
+    round = 5
     round_intermission = true
     won = false
 
@@ -56,6 +61,10 @@ function left_mouse_press()
     return left_mouse and not left_mouse_last
 end
 
+function left_mouse_consume()
+    left_mouse_last = left_mouse
+end
+
 function right_mouse_press()
     return right_mouse and not right_mouse_last
 end
@@ -66,6 +75,21 @@ function _update60()
     right_mouse_last = right_mouse
     right_mouse = stat(34) & 2 == 2
 
+    if game_state == 0 then update_main_menu()
+    elseif game_state == 1 then update_level_select()
+    elseif game_state == 2 then update_in_game()
+    end
+end
+
+function update_main_menu()
+
+end
+
+function update_level_select()
+
+end
+
+function update_in_game()
     bloon_spawn_cooldown = max(bloon_spawn_cooldown - 1, 0)
     if not round_intermission and bloon_spawn_cooldown <= 0 and not tbl_empty(current_round[1]) then
         bloon_spawn_cooldown = current_round[2]
@@ -96,6 +120,7 @@ function _update60()
             for j = 0, flr(rnd(6)) + 3 do
                 create_bloon_damage_particle()
             end
+            test_round_end()
         end
 
         -- test collisions with darts
@@ -107,20 +132,7 @@ function _update60()
                 if bloon.health <= 0 then
                     deli(bloons, i)
                     money += flr(rnd(bloon:get_reward())) + 1
-
-                    -- test round end
-                    if #bloons == 0 and tbl_empty(current_round[1]) then
-                        round_intermission = true
-                        if #current_map["rounds"] > round then
-                            round += 1
-                            load_round()
-                            bloon_spawn_cooldown = 0
-                        else
-                            won = true
-                            buy_menu_x_offset_dest = 128
-                            placing_monkey = nil
-                        end
-                    end
+                    test_round_end()
                     break
                 end
             end
@@ -154,11 +166,28 @@ function _update60()
             end
         end
 
+        if selected_monkey then
+            selected_monkey_radius_anim = lerp(selected_monkey_radius_anim, selected_monkey.type_data.range, 0.6)
+        end
+
+        if left_mouse_press() then
+            local monkey_hovering = get_monkey_hovered()
+            if monkey_hovering then
+                selected_monkey = monkey_hovering
+                selected_monkey_radius_anim = 0
+                buy_menu_x_offset_dest = 128 - buy_menu_width
+            elseif selected_monkey then
+                selected_monkey = nil
+                buy_menu_x_offset_dest = 128
+                left_mouse_consume()
+            end
+        end
+
         if right_mouse_press() and placing_monkey then
             placing_monkey = nil
         end
 
-        if left_mouse_press() and placing_monkey and not fget(mget(flr(stat(32) / 8), flr(stat(33) / 8)), 0) then
+        if left_mouse_press() and placing_monkey and can_place_monkey_at_mouse() then
             add(monkeys, create_monkey(stat(32), stat(33), placing_monkey))
             money -= placing_monkey.cost
             placing_monkey = nil
@@ -179,20 +208,41 @@ end
 function _draw()
     cls()
 
-    map(0, 0, 0, 0, 16, 16)
+    if game_state == 0 then draw_main_menu()
+    elseif game_state == 1 then draw_level_select()
+    elseif game_state == 2 then draw_in_game()
+    end
+
+    spr(1, stat(32), stat(33)) -- cursor
+end
+
+function draw_main_menu()
+
+end
+
+function draw_level_select()
+
+end
+
+function draw_in_game()
+    local map_offset = current_map["offset"]
+    map(map_offset[1], map_offset[2], 0, 0, 16, 16)
+
+    if selected_monkey then
+        selected_monkey:draw_range(selected_monkey_radius_anim)
+    end
 
     if placing_monkey then
         local c1 = 12
         local c2 = 1
-        if fget(mget(flr(stat(32) / 8), flr(stat(33) / 8)), 0) then
+        if not can_place_monkey_at_mouse() then
             c1 = 8
             c2 = 2
         end
-        fillp(▒)
+        fillp(0b1000011101110111.1)
         circfill(stat(32), stat(33), placing_monkey.range, c2)
         fillp()
         circ(stat(32), stat(33), placing_monkey.range, c1)
-
         spr(placing_monkey.sprite + 6, stat(32) - 4, stat(33) - 4)
     end
 
@@ -224,18 +274,30 @@ function _draw()
     if buy_menu_x_offset < 128 then
         rectfill(buy_menu_x_offset, 0, buy_menu_x_offset + buy_menu_width, buy_menu_height, 1)
 
-        for i, monkey_name in ipairs(buy_menu_choices) do
-            local monkey = monkey_types[monkey_name]
+        if not selected_monkey then
+            -- purchasing
+            for i, monkey_name in ipairs(buy_menu_choices) do
+                local monkey = monkey_types[monkey_name]
 
-            if rect_point_test(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 1, stat(32), stat(33)) then
-                rectfill(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 3, 13)
-                if left_mouse_press() and money >= monkey.cost then
-                    start_monkey_placement(monkey_name)
+                if rect_point_test(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 1, stat(32), stat(33)) then
+                    rectfill(buy_menu_x_offset, (i - 1) * 10, buy_menu_x_offset + buy_menu_width, i * 10 - 3, 13)
+                    if left_mouse_press() and money >= monkey.cost then
+                        start_monkey_placement(monkey_name)
+                    end
                 end
-            end
 
-            spr(monkey.sprite + 6, buy_menu_x_offset + 2, (i - 1) * 10)
-            print("$" .. monkey.cost, buy_menu_x_offset + 11, (i - 1) * 10 + 1, money >= monkey.cost and 7 or 8)
+                spr(monkey.sprite + 6, buy_menu_x_offset + 2, (i - 1) * 10)
+                print("$" .. monkey.cost, buy_menu_x_offset + 11, (i - 1) * 10 + 1, money >= monkey.cost and 7 or 8)
+            end
+        else
+            -- upgrading
+            local i = 0
+            for name in all(selected_monkey.type_data.name) do
+                print(name, buy_menu_x_offset + buy_menu_width / 2 - #name * 2, 2 + i, 7)
+                i += 7
+            end
+            i += 2
+            spr(selected_monkey.type_data.sprite + 6, buy_menu_x_offset + buy_menu_width / 2 - 4, i)
         end
     end
 
@@ -270,21 +332,43 @@ function _draw()
         rectfill(22, 35, 106, 93, 1)
         print("congratulations!", 33, 43 + sin(time()) * 3, 5)
         print("congratulations!", 32, 43 + sin(time() + 0.2) * 3, 12)
-        print("you have completed", 29, 58, 5)
+        print("you have completed", 29, 59, 5)
         print("you have completed", 28, 58, 12)
-        print(current_map["name"], 64 - #current_map["name"] * 2 + 1, 68, 5)
+        print(current_map["name"], 64 - #current_map["name"] * 2 + 1, 69, 5)
         print(current_map["name"], 64 - #current_map["name"] * 2, 68, 12)
     end
+end
 
-    spr(1, stat(32), stat(33)) -- cursor
+function can_place_monkey_at_mouse()
+    if fget(mget(flr(stat(32) / 8), flr(stat(33) / 8)), 0) then return false end
+    for monkey in all(monkeys) do
+        local dist = (stat(32) - monkey.x) ^ 2 + (stat(33) - monkey.y) ^ 2
+        if dist < 60 then return false end
+    end
+    return true
+end
 
-    -- print("cpu " .. stat(1) .. "%", 0, 120, 7)
+function get_monkey_hovered()
+    for monkey in all(monkeys) do
+        local dist = (stat(32) - monkey.x) ^ 2 + (stat(33) - monkey.y) ^ 2
+        if dist < 16 then return monkey end
+    end
+    return nil
+end
 
-    -- i = 0
-    -- for bloontype, blooncount in pairs(current_round[1]) do
-    --     print(bloontype .. ": " .. blooncount .. " left", 0, 80 + i * 9, 7)
-    --     i += 1
-    -- end
+function test_round_end()
+    if #bloons == 0 and tbl_empty(current_round[1]) then
+        round_intermission = true
+        if #current_map["rounds"] > round then
+            round += 1
+            load_round()
+            bloon_spawn_cooldown = 0
+        else
+            won = true
+            buy_menu_x_offset_dest = 128
+            placing_monkey = nil
+        end
+    end
 end
 
 function tbl_empty(t)
@@ -355,6 +439,7 @@ end
 function start_monkey_placement(monkey_name)
     if placing_monkey then return end
     placing_monkey = monkey_types[monkey_name]
+    selected_monkey = nil
     buy_menu_x_offset_dest = 128
 end
 
@@ -433,6 +518,14 @@ function create_monkey(x, y, monkey_data)
         local dart_bottom = rotate_vec(1 + ease_in_back(self.throw_progress) * 3, 5, self.dir)
         line(self.x + dart_top.x, y + dart_top.y, self.x + dart_bottom.x, y + dart_bottom.y, 5)
         circfill(self.x + hand.x, y + hand.y, 1, 4)
+    end
+
+    monkey.draw_range = function(self, radius_override)
+        local radius = radius_override or self.type_data.range
+        fillp(0b0111111111111110.1)
+        circfill(self.x, self.y, radius, 5)
+        fillp()
+        circ(self.x, self.y, radius, 6)
     end
 
     return monkey
