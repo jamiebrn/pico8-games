@@ -1,7 +1,4 @@
 -- todo
--- tower selection
--- tower selling
--- upgrades
 -- menu
 
 function _init()
@@ -10,8 +7,12 @@ function _init()
     game_state = 2 -- 0: main menu, 1: level select, 2: in game
 
     monkey_types = {
-        dart_monkey = {name = {"dart", "monkey"}, range = 20, sprite = 2, cost = 30},
-        ninja_monkey = {name = {"ninja", "monkey"}, range = 25, sprite = 34, cost = 40}
+        dart_monkey = {name = {"dart", "monkey"}, range = 20, damage = 1, sprite = 2, cost = 30,
+            upgrades_one = {{name = "glasses", range = 30, sprite = 51, cost = 30}},
+            upgrades_two = {{name = "sharpening", damage = 2, cost = 40}}},
+        ninja_monkey = {name = {"ninja", "monkey"}, range = 25, damage = 1, sprite = 34, cost = 40,
+            upgrades_one = {},
+            upgrades_two = {}}
     }
 
     buy_menu_choices = {
@@ -67,6 +68,14 @@ end
 
 function right_mouse_press()
     return right_mouse and not right_mouse_last
+end
+
+function print_outln(s, x, y, c, o)
+    print(s, x - 1, y, o)
+    print(s, x + 1, y, o)
+    print(s, x, y - 1, o)
+    print(s, x, y + 1, o)
+    print(s, x, y, c)
 end
 
 function _update60()
@@ -127,7 +136,7 @@ function update_in_game()
         for j, dart in ipairs(darts) do
             local sqdist = (dart.x - bloon.x) ^ 2 + (dart.y - bloon.y) ^ 2
             if sqdist <= 13 then
-                bloon:damage(1)
+                bloon:damage(dart.damage)
                 deli(darts, j)
                 if bloon.health <= 0 then
                     deli(bloons, i)
@@ -152,8 +161,12 @@ function update_in_game()
         end
     end
 
-    for monkey in all(monkeys) do
-        monkey:update()
+    for i, monkey in ipairs(monkeys) do
+        if monkey.sold then
+            deli(monkeys, i)
+        else
+            monkey:update()
+        end
     end
 
     buy_menu_x_offset = lerp(buy_menu_x_offset, buy_menu_x_offset_dest, 0.1)
@@ -167,7 +180,7 @@ function update_in_game()
         end
 
         if selected_monkey then
-            selected_monkey_radius_anim = lerp(selected_monkey_radius_anim, selected_monkey.type_data.range, 0.6)
+            selected_monkey_radius_anim = lerp(selected_monkey_radius_anim, selected_monkey:get_range(), 0.6)
         end
 
         if left_mouse_press() then
@@ -176,7 +189,7 @@ function update_in_game()
                 selected_monkey = monkey_hovering
                 selected_monkey_radius_anim = 0
                 buy_menu_x_offset_dest = 128 - buy_menu_width
-            elseif selected_monkey then
+            elseif selected_monkey and not rect_point_test(buy_menu_x_offset, 0, buy_menu_x_offset + buy_menu_width, buy_menu_height, stat(32), stat(33)) then
                 selected_monkey = nil
                 buy_menu_x_offset_dest = 128
                 left_mouse_consume()
@@ -298,6 +311,58 @@ function draw_in_game()
             end
             i += 2
             spr(selected_monkey.type_data.sprite + 6, buy_menu_x_offset + buy_menu_width / 2 - 4, i)
+            i += 10
+
+            if #selected_monkey.type_data.upgrades_one <= selected_monkey.upgrade_one_amount then
+                print("max", buy_menu_x_offset + 4, i + 2, 7)
+            else
+                if rect_point_test(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, stat(32), stat(33)) then
+                    rectfill(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, 13)
+                    if left_mouse_press() and money >= selected_monkey.type_data.upgrades_one[selected_monkey.upgrade_one_amount + 1].cost then
+                        money -= selected_monkey.type_data.upgrades_one[selected_monkey.upgrade_one_amount + 1].cost
+                        selected_monkey:upgrade_one_apply()
+                    end
+                end
+
+                local cost = selected_monkey.type_data.upgrades_one[min(selected_monkey.upgrade_one_amount + 1, #selected_monkey.type_data.upgrades_one)].cost
+                print(selected_monkey.type_data.upgrades_one[min(selected_monkey.upgrade_one_amount + 1, #selected_monkey.type_data.upgrades_one)].name,
+                    buy_menu_x_offset + 4, i + 2, money >= cost and 7 or 8)
+                print_outln("$" .. cost, buy_menu_x_offset - #tostr("$" .. cost) * 4 - 2, i + 2, money >= cost and 7 or 8, 1)
+            end
+            i += 10
+
+            if #selected_monkey.type_data.upgrades_two <= selected_monkey.upgrade_two_amount then
+                print("max", buy_menu_x_offset + 4, i + 2, 7)
+            else
+                if rect_point_test(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, stat(32), stat(33)) then
+                    rectfill(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, 13)
+                    if left_mouse_press() and money >= selected_monkey.type_data.upgrades_two[selected_monkey.upgrade_two_amount + 1].cost then
+                        money -= selected_monkey.type_data.upgrades_two[selected_monkey.upgrade_two_amount + 1].cost
+                        selected_monkey:upgrade_two_apply()
+                    end
+                end
+
+                local cost = selected_monkey.type_data.upgrades_two[min(selected_monkey.upgrade_two_amount + 1, #selected_monkey.type_data.upgrades_two)].cost
+                print(selected_monkey.type_data.upgrades_two[min(selected_monkey.upgrade_two_amount + 1, #selected_monkey.type_data.upgrades_two)].name,
+                    buy_menu_x_offset + 4, i + 2, money >= cost and 7 or 8)
+                print_outln("$" .. cost, buy_menu_x_offset - #tostr("$" .. cost) * 4 - 2, i + 2, money >= cost and 7 or 8, 1)
+            end
+            i += 12
+
+            if rect_point_test(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, stat(32), stat(33)) then
+                rectfill(buy_menu_x_offset, i, buy_menu_x_offset + buy_menu_width, i + 8, 13)
+                if left_mouse_press() then
+                    -- sell tower
+                    selected_monkey.sold = true
+                    money += selected_monkey.sell_price
+                    selected_monkey = nil
+                end
+            end
+
+            if selected_monkey then
+                print("sell", buy_menu_x_offset + 4, i + 2, 9)
+                print_outln("$" .. selected_monkey.sell_price, buy_menu_x_offset - #tostr("$" .. selected_monkey.sell_price) * 4 - 2, i + 2, 9, 1)
+            end
         end
     end
 
@@ -407,11 +472,12 @@ function load_round()
     current_round = round_copy
 end
 
-function create_dart(x, y, dir)
+function create_dart(x, y, dir, damage)
     local dart = {}
     dart.x = x
     dart.y = y
     dart.dir = dir
+    dart.damage = damage
 
     dart.update = function(self)
         self.x += cos(self.dir) / 60 * 100
@@ -452,6 +518,12 @@ function create_monkey(x, y, monkey_data)
     monkey.dir = 0
     monkey.type_data = monkey_data
 
+    monkey.sell_price = monkey_data.cost / 2
+    monkey.sold = false
+
+    monkey.upgrade_one_amount = 0
+    monkey.upgrade_two_amount = 0
+
     monkey.throw_cooldown = 0
 
     monkey.throw_progress = 0
@@ -464,7 +536,7 @@ function create_monkey(x, y, monkey_data)
     end
 
     monkey._get_closest_bloon_pos = function(self)
-        local shortest = self.type_data.range ^ 2 + 1
+        local shortest = self:get_range() ^ 2 + 1
         local pos = nil
         for bloon in all(bloons) do
             local sqdist = (bloon.x - self.x) ^ 2 + (bloon.y - self.y) ^ 2
@@ -498,7 +570,7 @@ function create_monkey(x, y, monkey_data)
             if self.throw_progress >= 1 then
                 local hand = self:_get_hand_local_pos()
                 local angle = atan2(self.throw_target.x - (self.x + hand.x), self.throw_target.y - (self.y + hand.y))
-                create_dart(self.x + hand.x, self.y + hand.y, angle)
+                create_dart(self.x + hand.x, self.y + hand.y, angle, self:_get_dart_damage())
                 self.throw_target = nil
                 self.throw_progress = 0
             end
@@ -509,15 +581,58 @@ function create_monkey(x, y, monkey_data)
         return rotate_vec(2 + ease_in_back(self.throw_progress) * 3, 5, self.dir)
     end
 
+    monkey.get_range = function(self)
+        return self:_get_highest_upgrade_stat("range")
+    end
+
+    monkey._get_dart_damage = function(self)
+        return self:_get_highest_upgrade_stat("damage")
+    end
+
+    monkey._get_highest_upgrade_stat = function(self, stat_str)
+        local stat = self.type_data[stat_str]
+        if self.upgrade_one_amount > 0 then
+            local stat_upgrade = self.type_data.upgrades_one[self.upgrade_one_amount][stat_str]
+            if stat_upgrade then stat = max(stat, stat_upgrade) end
+        end
+        if self.upgrade_two_amount > 0 then
+            local stat_upgrade = self.type_data.upgrades_two[self.upgrade_two_amount][stat_str]
+            if stat_upgrade then stat = max(stat, stat_upgrade) end
+        end
+        return stat
+    end
+
+    monkey.upgrade_one_apply = function(self)
+        self.upgrade_one_amount += 1
+        self.sell_price += self.type_data.upgrades_one[self.upgrade_one_amount].cost / 2
+    end
+
+    monkey.upgrade_two_apply = function(self)
+        self.upgrade_two_amount += 1
+        self.sell_price += self.type_data.upgrades_two[self.upgrade_two_amount].cost / 2
+    end
+
     monkey.draw = function(self)
-        local s =  min(flr((1 - self.dir) * 8 + 0.5) + self.type_data.sprite, self.type_data.sprite + 7)
-        spr(s, self.x - 4, self.y - 4)
+        local s_offset = min(flr((1 - self.dir) * 8 + 0.5), 7)
+        spr(self.type_data.sprite + s_offset, self.x - 4, self.y - 4)
 
         local hand = self:_get_hand_local_pos()
         local dart_top = rotate_vec(4 + ease_in_back(self.throw_progress) * 3, 5, self.dir)
         local dart_bottom = rotate_vec(1 + ease_in_back(self.throw_progress) * 3, 5, self.dir)
         line(self.x + dart_top.x, y + dart_top.y, self.x + dart_bottom.x, y + dart_bottom.y, 5)
         circfill(self.x + hand.x, y + hand.y, 1, 4)
+
+        if self.upgrade_one_amount > 0 then
+            if self.type_data.upgrades_one[self.upgrade_one_amount]["sprite"] then
+                spr(self.type_data.upgrades_one[self.upgrade_one_amount].sprite + s_offset, self.x - 4, self.y - 4)
+            end
+        end
+
+        if self.upgrade_two_amount > 0 then
+            if self.type_data.upgrades_two[self.upgrade_two_amount]["sprite"] then
+                spr(self.type_data.upgrades_two[self.upgrade_two_amount].sprite + s_offset, self.x - 4, self.y - 4)
+            end
+        end
     end
 
     monkey.draw_range = function(self, radius_override)
