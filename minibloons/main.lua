@@ -7,10 +7,10 @@ function _init()
     game_state = 2 -- 0: main menu, 1: level select, 2: in game
 
     monkey_types = {
-        dart_monkey = {name = {"dart", "monkey"}, range = 20, damage = 1, sprite = 2, cost = 30,
-            upgrades_one = {{name = "glasses", range = 30, sprite = 51, cost = 30}},
-            upgrades_two = {{name = "sharpening", damage = 2, cost = 40}}},
-        ninja_monkey = {name = {"ninja", "monkey"}, range = 25, damage = 1, sprite = 34, cost = 40,
+        dart_monkey = {name = {"dart", "monkey"}, range = 20, damage = 1, sprite = 2, cost = 35,
+            upgrades_one = {{name = "range", range = 25, cost = 40}, {name = "sight", sprite = 51, range = 30, camos_visible = true, cost = 60}},
+            upgrades_two = {{name = "sharp", damage = 2, cost = 50}}},
+        ninja_monkey = {name = {"ninja", "monkey"}, range = 25, damage = 1, sprite = 34, cost = 40, camos_visible = true,
             upgrades_one = {},
             upgrades_two = {}}
     }
@@ -23,16 +23,37 @@ function _init()
     buy_menu_width = 30
     buy_menu_height = 60
 
+    game_speed = 1
+
     darts = {}
     monkeys = {}
     bloons = {}
 
     particles = {}
 
+    bloon_types = {
+        {sprite = 10, health = 1, speed = 20, reward = 1}, -- red
+        {sprite = 11, health = 2, speed = 25, reward = 2}, -- blue
+        {sprite = 12, health = 3, speed = 30, reward = 3}, -- orange
+        {sprite = 13, health = 8, speed = 15, reward = 6}, -- metal
+        {sprite = 27, health = 2, speed = 20, reward = 2, camo = true}, -- red camo
+        {sprite = 28, health = 4, speed = 25, reward = 3, camo = true}, -- blue camo
+        {sprite = 29, health = 5, speed = 30, reward = 4, camo = true}, -- orange camo
+    }
+
     maps = {
         monkey_meadow = {name = "monkey meadow",
             offset = {0, 0}, path = {{-1, 6}, {8, 6}, {8, 3}, {5, 3}, {5, 12}, {2, 12}, {2, 9}, {11, 9}, {11, 6}, {13, 6}, {13, 12}, {7, 12}, {7, 16}},
-            rounds = {{{[1]=10}, 50}, {{[1]=10}, 40}, {{[1]=12}, 35}, {{[1]=10, [2]=3}, 40}, {{[1]=14, [2]=5}, 40}}
+            rounds = {
+                {{[1]=10}, 60}, {{[1]=15}, 58}, {{[2]=8}, 56}, {{[1]=10, [2]=5}, 54}, {{[1]=20}, 52}, {{[2]=12}, 50}, {{[1]=10, [2]=10}, 48}, {{[1]=15, [2]=15}, 46},
+                {{[1]=20, [2]=10}, 44}, {{[2]=20}, 42}, {{[3]=5}, 40}, {{[2]=15, [3]=5}, 39}, {{[1]=10, [3]=8}, 38}, {{[2]=20, [3]=10}, 37}, {{[3]=15}, 36}, {{[5]=5}, 35},
+                {{[6]=5, [2]=10}, 34}, {{[7]=3, [3]=10}, 33}, {{[5]=10, [2]=15}, 32}, {{[6]=8, [3]=10}, 31}, {{[4]=2}, 30}, {{[4]=3, [2]=10}, 29}, {{[4]=5, [3]=10}, 28},
+                {{[4]=5, [7]=5}, 27}, {{[4]=8}, 26}, {{[2]=20, [3]=15}, 25}, {{[3]=20, [6]=10}, 24}, {{[4]=5, [2]=20, [5]=10}, 23}, {{[7]=10, [3]=15}, 22},
+                {{[4]=10, [3]=20}, 21}, {{[4]=8, [6]=12}, 20}, {{[2]=25, [3]=20, [7]=5}, 19}, {{[4]=10, [5]=10, [7]=10}, 18}, {{[6]=15, [3]=20}, 17}, {{[4]=12, [7]=8}, 16},
+                {{[2]=30, [3]=20}, 15}, {{[4]=15, [6]=15}, 14}, {{[7]=12, [3]=25}, 13}, {{[5]=20, [6]=10, [3]=15}, 12}, {{[4]=20, [2]=30}, 12}, {{[3]=30, [7]=10}, 12},
+                {{[4]=15, [6]=15, [3]=15}, 12}, {{[5]=15, [7]=15}, 12}, {{[4]=20, [3]=20, [6]=10}, 12}, {{[7]=20, [3]=25}, 12}, {{[4]=25, [6]=20}, 12},
+                {{[5]=25, [7]=15, [3]=20}, 12}, {{[4]=30, [7]=20}, 12}, {{[6]=30, [7]=20}, 12}, {{[4]=40, [5]=30, [6]=25, [7]=20}, 12}
+            }
         }
     }
 
@@ -42,7 +63,7 @@ function _init()
 
     money = 100
     health = 50
-    round = 5
+    round = 1
     round_intermission = true
     won = false
 
@@ -99,73 +120,76 @@ function update_level_select()
 end
 
 function update_in_game()
-    bloon_spawn_cooldown = max(bloon_spawn_cooldown - 1, 0)
-    if not round_intermission and bloon_spawn_cooldown <= 0 and not tbl_empty(current_round[1]) then
-        bloon_spawn_cooldown = current_round[2]
-        -- choose bloon
-        local total = 0
-        for i, blooncount in pairs(current_round[1]) do
-            total += blooncount
-        end
-        local cumulative = 0
-        local chosen = flr(rnd(total)) + 1
-        for bloontype, blooncount in pairs(current_round[1]) do
-            cumulative += blooncount
-            if chosen <= cumulative then
-                create_bloon(bloontype)
-                current_round[1][bloontype] -= 1
-                if current_round[1][bloontype] <= 0 then
-                    current_round[1][bloontype] = nil
-                end
-                break
+    for i = 1, game_speed do
+        bloon_spawn_cooldown = max(bloon_spawn_cooldown - 1, 0)
+        if not round_intermission and bloon_spawn_cooldown <= 0 and not tbl_empty(current_round[1]) then
+            bloon_spawn_cooldown = current_round[2]
+            -- choose bloon
+            local total = 0
+            for i, blooncount in pairs(current_round[1]) do
+                total += blooncount
             end
-        end
-    end
-
-    for i, bloon in ipairs(bloons) do
-        if not bloon:update() then
-            deli(bloons, i)
-            health -= 1
-            for j = 0, flr(rnd(6)) + 3 do
-                create_bloon_damage_particle()
-            end
-            test_round_end()
-        end
-
-        -- test collisions with darts
-        for j, dart in ipairs(darts) do
-            local sqdist = (dart.x - bloon.x) ^ 2 + (dart.y - bloon.y) ^ 2
-            if sqdist <= 13 then
-                bloon:damage(dart.damage)
-                deli(darts, j)
-                if bloon.health <= 0 then
-                    deli(bloons, i)
-                    money += flr(rnd(bloon:get_reward())) + 1
-                    test_round_end()
+            local cumulative = 0
+            local chosen = flr(rnd(total)) + 1
+            for bloontype, blooncount in pairs(current_round[1]) do
+                cumulative += blooncount
+                if chosen <= cumulative then
+                    create_bloon(bloontype)
+                    current_round[1][bloontype] -= 1
+                    if current_round[1][bloontype] <= 0 then
+                        current_round[1][bloontype] = nil
+                    end
                     break
                 end
             end
         end
-    end
 
-    for i, part in ipairs(particles) do
-        if not part:update() do
-            deli(particles, i)
+        for i, bloon in ipairs(bloons) do
+            if not bloon:update() then
+                health -= bloon.health
+                deli(bloons, i)
+                for j = 0, flr(rnd(6)) + 3 do
+                    create_bloon_damage_particle()
+                end
+                test_round_end()
+            end
+
+            -- test collisions with darts
+            for j, dart in ipairs(darts) do
+                local sqdist = (dart.x - bloon.x) ^ 2 + (dart.y - bloon.y) ^ 2
+                if sqdist <= 13 then
+                    bloon:damage(dart.damage)
+                    deli(darts, j)
+                    if bloon.health <= 0 then
+                        deli(bloons, i)
+                        sfx(0)
+                        money += flr(rnd(bloon:get_reward())) + 1
+                        test_round_end()
+                        break
+                    end
+                end
+            end
         end
-    end
 
-    for i, dart in ipairs(darts) do
-        dart:update()
-        if not dart:is_alive() then
-            deli(darts, i)
+        for i, part in ipairs(particles) do
+            if not part:update() do
+                deli(particles, i)
+            end
         end
-    end
 
-    for i, monkey in ipairs(monkeys) do
-        if monkey.sold then
-            deli(monkeys, i)
-        else
-            monkey:update()
+        for i, dart in ipairs(darts) do
+            dart:update()
+            if not dart:is_alive() then
+                deli(darts, i)
+            end
+        end
+
+        for i, monkey in ipairs(monkeys) do
+            if monkey.sold then
+                deli(monkeys, i)
+            else
+                monkey:update()
+            end
         end
     end
 
@@ -385,15 +409,23 @@ function draw_in_game()
     print("round " .. round, 2, 24, 1)
     print("round " .. round, 1, 24, 7)
 
-    if round_intermission and not won then
-        local hovering = rect_point_test(1, 31, 4, 39, stat(32), stat(33))
-        spr(hovering and 50 or 49, 1, 31)
-        if hovering and left_mouse_press() then
-            round_intermission = false
+    if not won then
+        if round_intermission then
+            local hovering = rect_point_test(1, 31, 4, 39, stat(32), stat(33))
+            spr(hovering and 50 or 49, 1, 31)
+            if hovering and left_mouse_press() then
+                round_intermission = false
+            end
+        else
+            local hovering = rect_point_test(1, 31, 6, 39, stat(32), stat(33))
+            local speed_up = game_speed < 2
+            spr(speed_up and (hovering and 80 or 64) or (hovering and 81 or 65), 1, 31)
+            if hovering and left_mouse_press() then
+                if speed_up then game_speed = 2
+                else game_speed = 1 end
+            end
         end
-    end
-
-    if won then
+    else
         rectfill(22, 35, 106, 93, 1)
         print("congratulations!", 33, 43 + sin(time()) * 3, 5)
         print("congratulations!", 32, 43 + sin(time() + 0.2) * 3, 12)
@@ -518,7 +550,7 @@ function create_monkey(x, y, monkey_data)
     monkey.dir = 0
     monkey.type_data = monkey_data
 
-    monkey.sell_price = monkey_data.cost / 2
+    monkey.sell_price = flr(monkey_data.cost / 2)
     monkey.sold = false
 
     monkey.upgrade_one_amount = 0
@@ -538,13 +570,16 @@ function create_monkey(x, y, monkey_data)
     monkey._get_closest_bloon_pos = function(self)
         local shortest = self:get_range() ^ 2 + 1
         local pos = nil
+        local camos_visible = self:get_can_see_camos()
         for bloon in all(bloons) do
-            local sqdist = (bloon.x - self.x) ^ 2 + (bloon.y - self.y) ^ 2
-            if sqdist < shortest then
-                if not pos then pos = {} end
-                pos.x = bloon.x
-                pos.y = bloon.y
-                shortest = sqdist
+            if camos_visible or not bloon:get_is_camo() then
+                local sqdist = (bloon.x - self.x) ^ 2 + (bloon.y - self.y) ^ 2
+                if sqdist < shortest then
+                    if not pos then pos = {} end
+                    pos.x = bloon.x
+                    pos.y = bloon.y
+                    shortest = sqdist
+                end
             end
         end
         return pos
@@ -604,12 +639,24 @@ function create_monkey(x, y, monkey_data)
 
     monkey.upgrade_one_apply = function(self)
         self.upgrade_one_amount += 1
-        self.sell_price += self.type_data.upgrades_one[self.upgrade_one_amount].cost / 2
+        self.sell_price += flr(self.type_data.upgrades_one[self.upgrade_one_amount].cost / 2)
     end
 
     monkey.upgrade_two_apply = function(self)
         self.upgrade_two_amount += 1
-        self.sell_price += self.type_data.upgrades_two[self.upgrade_two_amount].cost / 2
+        self.sell_price += flr(self.type_data.upgrades_two[self.upgrade_two_amount].cost / 2)
+    end
+
+    monkey.get_can_see_camos = function(self)
+        if self.upgrade_one_amount > 0 then
+            local visible = self.type_data.upgrades_one[self.upgrade_one_amount]["camos_visible"]
+            if visible then return visible end
+        end
+        if self.upgrade_two_amount > 0 then
+            local visible = self.type_data.upgrades_two[self.upgrade_two_amount]["camos_visible"]
+            if visible then return visible end
+        end
+        return self.type_data["camos_visible"] or false
     end
 
     monkey.draw = function(self)
@@ -647,10 +694,6 @@ function create_monkey(x, y, monkey_data)
 end
 
 function create_bloon(type)
-    local speed = 20
-    local type_healths = {1, 2, 4, 7}
-    local type_reward = {2, 4, 6, 12}
-
     local bloon = {}
     bloon.path_index_dest = 1
 
@@ -663,7 +706,7 @@ function create_bloon(type)
     bloon.y = pos.y
 
     bloon.type = type
-    bloon.health = type_healths[bloon.type]
+    bloon.health = bloon_types[type].health
 
     bloon.flash_time = 0
 
@@ -685,6 +728,7 @@ function create_bloon(type)
 
         dist = sqrt(dist)
 
+        local speed = bloon_types[type].speed
         self.x += (dest_pos.x - self.x) / dist * speed / 60
         self.y += (dest_pos.y - self.y) / dist * speed / 60
 
@@ -697,11 +741,15 @@ function create_bloon(type)
     end
 
     bloon.get_reward = function(self)
-        return type_reward[self.type]
+        return bloon_types[self.type].reward
+    end
+    
+    bloon.get_is_camo = function(self)
+        return bloon_types[self.type]["camo"] or false
     end
 
     bloon.draw = function(self)
-        local s = 9 + self.type
+        local s = bloon_types[self.type].sprite
         if self.flash_time > 0 then s = 26 end
         spr(s, self.x - 4, self.y - 4 + sin(time() + self.hover_seed) * 1)
     end
