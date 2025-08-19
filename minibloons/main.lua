@@ -9,14 +9,17 @@ function _init()
     monkey_types = {
         dart_monkey = {name = {"dart", "monkey"}, range = 20, damage = 1, sprite = 2, cost = 35,
             upgrades_one = {{name = "range", range = 25, cost = 40}, {name = "sight", sprite = 51, range = 30, camos_visible = true, cost = 60}},
-            upgrades_two = {{name = "sharp", damage = 2, cost = 50}}},
+            upgrades_two = {{name = "force", damage = 2, cost = 50, sprite = 67}, {name = "sharp", damage = 3, cost = 70, sprite = 67}}},
         ninja_monkey = {name = {"ninja", "monkey"}, range = 25, damage = 1, sprite = 34, cost = 40, camos_visible = true,
+            upgrades_one = {},
+            upgrades_two = {}},
+        super_monkey = {name = {"super", "monkey"}, range = 30, damage = 1, sprite = 83, cost = 120, attack_cooldown = 25,
             upgrades_one = {},
             upgrades_two = {}}
     }
 
     buy_menu_choices = {
-        "dart_monkey", "ninja_monkey"
+        "dart_monkey", "ninja_monkey", "super_monkey"
     }
     buy_menu_x_offset = 128
     buy_menu_x_offset_dest = 128
@@ -61,7 +64,7 @@ function _init()
     selected_monkey = nil
     selected_monkey_radius_anim = 0
 
-    money = 100
+    money = 500
     health = 50
     round = 1
     round_intermission = true
@@ -504,19 +507,24 @@ function load_round()
     current_round = round_copy
 end
 
-function create_dart(x, y, dir, damage)
+function create_dart(x, y, dir, damage, range)
     local dart = {}
     dart.x = x
     dart.y = y
     dart.dir = dir
     dart.damage = damage
 
+    dart.max_distance = range
+    dart.distance_travelled = 0
+
     dart.update = function(self)
         self.x += cos(self.dir) / 60 * 100
         self.y += sin(self.dir) / 60 * 100
+        self.distance_travelled += 100 / 60
     end
 
     dart.is_alive = function(self)
+        if self.distance_travelled >= self.max_distance then return false end
         local bottom = rotate_vec(-1, 0, self.dir)
         return self.x + bottom.x >= 0 and self.x + bottom.x <= 127 and self.y + bottom.y >= 0 and self.y + bottom.y <= 127
     end
@@ -585,6 +593,10 @@ function create_monkey(x, y, monkey_data)
         return pos
     end
 
+    monkey._get_attack_cooldown = function(self)
+        return self:_get_highest_upgrade_stat("attack_cooldown") or throw_cooldown_max
+    end
+
     monkey.update = function(self)
         self.throw_cooldown -= 1
 
@@ -593,7 +605,7 @@ function create_monkey(x, y, monkey_data)
             self.dir = atan2(closest_bloon.x - self.x, closest_bloon.y - self.y)
 
             if self.throw_cooldown <= 0 then
-                self.throw_cooldown = throw_cooldown_max
+                self.throw_cooldown = self:_get_attack_cooldown()
                 self:throw(closest_bloon.x, closest_bloon.y)
             end
         end
@@ -605,7 +617,7 @@ function create_monkey(x, y, monkey_data)
             if self.throw_progress >= 1 then
                 local hand = self:_get_hand_local_pos()
                 local angle = atan2(self.throw_target.x - (self.x + hand.x), self.throw_target.y - (self.y + hand.y))
-                create_dart(self.x + hand.x, self.y + hand.y, angle, self:_get_dart_damage())
+                create_dart(self.x + hand.x, self.y + hand.y, angle, self:_get_dart_damage(), self:get_range())
                 self.throw_target = nil
                 self.throw_progress = 0
             end
