@@ -4,7 +4,7 @@
 function _init()
     poke(0x5f2d, 1)
 
-    game_state = 2 -- 0: main menu, 1: level select, 2: in game
+    game_state = 0 -- 0: main menu, 1: level select, 2: in game
 
     monkey_types = {
         dart_monkey = {name = {"dart", "monkey"}, range = 20, damage = 1, sprite = 2, cost = 35,
@@ -64,7 +64,7 @@ function _init()
     selected_monkey = nil
     selected_monkey_radius_anim = 0
 
-    money = 500
+    money = 100
     health = 50
     round = 1
     round_intermission = true
@@ -257,7 +257,7 @@ function _draw()
 end
 
 function draw_main_menu()
-
+    print_outln("minibloons", 64 - #"minibloons" * 2, 20, 7, 1)
 end
 
 function draw_level_select()
